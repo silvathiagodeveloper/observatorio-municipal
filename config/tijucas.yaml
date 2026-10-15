@@ -1,0 +1,40 @@
+# Configuração da instância de Tijucas/SC.
+# Para outra cidade: copie este arquivo, troque o CNPJ, o nome e os portais.
+
+municipio: Tijucas
+uf: SC
+codigo_ibge: 4218004
+
+orgao:
+  nome: Município de Tijucas
+  cnpj: "82577636000165"
+
+coleta:
+  desde: 2025-01-01
+  banco: dados/tijucas.sqlite
+
+# Limites legais usados pelas regras.
+# ATENÇÃO: os valores de dispensa (art. 75, I e II da Lei 14.133) são
+# atualizados todo ano por decreto federal (2025: Decreto 12.343/2024; 2026: Decreto 12.807/2025).
+limites:
+  aditivo_percentual: 0.25          # art. 125: até 25% (obras, serviços, compras)
+  aditivo_percentual_reforma: 0.50  # art. 125: até 50% em reforma de edifício/equipamento
+  dispensa_obras_eng:
+    2025: 125451.15
+    2026: 130984.20
+  dispensa_outros:
+    2025: 62725.59
+    2026: 65492.11
+  dispensa_manutencao_veiculos:     # art. 75, §7º
+    2025: 10036.10
+    2026: 10478.74
+  fracionamento_margem: 0.80        # contratos acima de 80% do limite contam como "próximos do teto"
+
+regras:
+  concentracao_top_fornecedor: 0.10 # alerta se um fornecedor concentra >10% do valor contratado
+  recorrencia_dispensa_min: 3       # alerta se um fornecedor recebe >=3 dispensas/inexigibilidades no ano
+
+# Fontes que não são coletadas automaticamente (exportação manual ou LAI)
+portais_manuais:
+  transparencia: https://tijucas.atende.net/transparencia/
+  diario_oficial: https://diariomunicipal.sc.gov.br/

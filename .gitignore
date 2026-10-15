@@ -1,0 +1,7 @@
+# Dados e relatórios de cada instância ficam fora do repositório público
+dados/
+*.sqlite
+__pycache__/
+*.egg-info/
+.venv/
+.env
