@@ -1,0 +1,17 @@
+[project]
+name = "observatorio-municipal"
+version = "0.1.0"
+description = "Controle social de compras públicas municipais com dados abertos do PNCP"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = ["requests>=2.31", "pyyaml>=6"]
+
+[project.optional-dependencies]
+agentes = ["anthropic>=0.40"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

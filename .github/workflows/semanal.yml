@@ -1,0 +1,35 @@
+name: Coleta semanal
+
+on:
+  schedule:
+    - cron: "17 9 * * 1"   # segundas, 06:17 (Brasília)
+  workflow_dispatch:
+
+jobs:
+  coleta:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        cidade: [tijucas]   # acrescente outras cidades aqui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -e .
+      - uses: actions/cache@v4      # reaproveita o banco entre execuções (coleta incremental)
+        with:
+          path: dados
+          key: dados-${{ matrix.cidade }}-${{ github.run_id }}
+          restore-keys: dados-${{ matrix.cidade }}-
+      - run: python -m observatorio.coleta config/${{ matrix.cidade }}.yaml
+      - run: python -m observatorio.regras config/${{ matrix.cidade }}.yaml
+      - run: python -m observatorio.relatorio config/${{ matrix.cidade }}.yaml
+      # O relatório NÃO é publicado: fica como artefato privado da execução,
+      # para revisão humana antes de qualquer divulgação.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: relatorio-${{ matrix.cidade }}
+          path: |
+            dados/relatorio.md
+            dados/alertas.json
+          retention-days: 90
