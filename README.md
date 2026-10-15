@@ -137,4 +137,4 @@ A pasta `dados/` está no `.gitignore`. **Alertas e relatórios nunca vão para 
 
 ## Licença
 
-MIT.
+MIT — veja [LICENSE](LICENSE).
