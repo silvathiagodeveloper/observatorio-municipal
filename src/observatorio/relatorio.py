@@ -45,7 +45,8 @@ def gerar(cfg_path: str) -> Path:
          f"- {n_termos} termos aditivos", "",
          "Limitações: o PNCP só tem o que a prefeitura cadastra. Atas de registro de preços, empenhos e pagamentos "
          "ainda não estão cruzados (os pagamentos dependem do portal municipal ou de pedido via LAI). "
-         "A comparação de preços com outros municípios ainda está em desenvolvimento.", ""]
+         "Os preços são comparados só com municípios vizinhos e com o certame de origem das adesões, "
+         "e a equivalência entre itens é estimada pela descrição.", ""]
 
     if revisao:
         proc = [(t, r) for t, r in revisao.items() if r.get("classificacao", "").startswith("PROCEDENTE")]

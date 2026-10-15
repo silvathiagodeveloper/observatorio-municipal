@@ -43,7 +43,12 @@ class PNCP:
                 return None
             if r.status_code == 200:
                 return r.json()
-            if r.status_code in (429, 500, 502, 503, 504):
+            if r.status_code == 429:
+                # Limite de requisições do PNCP: esperamos o que o servidor pedir.
+                espera = r.headers.get("Retry-After", "")
+                time.sleep(int(espera) if espera.isdigit() else 30 * (i + 1))
+                continue
+            if r.status_code in (500, 502, 503, 504):
                 time.sleep(2 * (i + 1))
                 continue
             r.raise_for_status()
@@ -79,6 +84,21 @@ class PNCP:
                                       {"dataInicial": di, "dataFinal": df, "cnpj": cnpj,
                                        "codigoModalidadeContratacao": modalidade})
 
+    def contratacoes_municipio(self, ibge: int, inicio: date, fim: date, modalidade: int) -> Iterator[dict]:
+        """Compras de todos os órgãos com unidade no município (prefeitura, câmara, fundos)."""
+        for di, df in self._janelas(inicio, fim):
+            yield from self._paginado(f"{CONSULTA}/contratacoes/publicacao",
+                                      {"dataInicial": di, "dataFinal": df, "codigoMunicipioIbge": ibge,
+                                       "codigoModalidadeContratacao": modalidade})
+
+    def orgaos(self, razao_social: str, paginas: int = 5) -> Iterator[dict]:
+        """Busca órgãos por parte da razão social (a API devolve correspondências parciais)."""
+        for pagina in range(1, paginas + 1):
+            d = self._get(f"{PNCP_API}/orgaos/", {"razaoSocial": razao_social, "pagina": pagina})
+            if not d:
+                return
+            yield from d
+
     def compra(self, cnpj: str, ano: int, seq: int) -> dict | None:
         """Uma contratação específica, de qualquer órgão (ex.: consórcio que licitou pelo município)."""
         return self._get(f"{CONSULTA}/orgaos/{cnpj}/compras/{ano}/{seq}")
@@ -88,3 +108,6 @@ class PNCP:
 
     def itens(self, cnpj: str, ano: int, seq: int) -> list[dict]:
         return self._get(f"{PNCP_API}/orgaos/{cnpj}/compras/{ano}/{seq}/itens") or []
+
+    def resultados(self, cnpj: str, ano: int, seq: int, item: int) -> list[dict]:
+        return self._get(f"{PNCP_API}/orgaos/{cnpj}/compras/{ano}/{seq}/itens/{item}/resultados") or []

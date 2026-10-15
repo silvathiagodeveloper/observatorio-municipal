@@ -30,9 +30,9 @@ Começou em **Tijucas/SC** e foi feito para ser replicado em qualquer cidade. Ba
 | `adesoes_repetidas_mesma_ata` | Mais de uma adesão à mesma ata, com risco de passar o limite de 50% por item (art. 86, §4º) |
 | `fornecedor_recorrente_sem_licitacao` | Três ou mais contratações diretas para o mesmo fornecedor no ano |
 | `concentracao_de_fornecedor` | Um fornecedor com mais de 10% do valor contratado |
+| `preco_acima_da_referencia` | Preço unitário acima da referência: numa adesão, mais de 1,2x o menor preço do certame que gerou a ata; nos demais casos, mais de 1,5x a mediana de itens parecidos comprados por municípios vizinhos |
 
 **Próximas regras:**
-- preço fora do mercado (comparação com outros municípios no PNCP);
 - empresa aberta pouco antes do contrato;
 - licitação com participante único;
 - cruzamento de pagamentos com contratos.
@@ -71,7 +71,8 @@ python -m observatorio.relatorio config/tijucas.yaml   # gera dados/relatorio.md
 
 Sobre a coleta:
 - A primeira leva de 15 a 30 minutos: o coletor espera entre as chamadas para não sobrecarregar o PNCP. As seguintes só buscam o que mudou.
-- Para rodar uma etapa isolada, use `python -m observatorio.coleta config/tijucas.yaml termos`. As etapas são `contratacoes`, `contratos`, `compras_externas` e `termos`.
+- Para rodar uma etapa isolada, use `python -m observatorio.coleta config/tijucas.yaml termos`. As etapas são `contratacoes`, `contratos`, `compras_externas`, `termos`, `itens` e `referencias`.
+- `referencias` baixa as compras dos municípios vizinhos listados em `precos.vizinhos` e o certame de origem de cada adesão a ata. A primeira vez é a mais demorada.
 - Para rodar em segundo plano, com log em `dados/coleta.log`, use `scripts/coletar.sh config/tijucas.yaml`.
 
 ### Revisão dos alertas
@@ -88,6 +89,7 @@ O workflow `.github/workflows/semanal.yml` roda a coleta, as regras e o relatór
 2. Copie `config/tijucas.yaml` para `config/<sua-cidade>.yaml`.
 3. Troque o nome, o código IBGE e o **CNPJ da prefeitura**. O CNPJ está no rodapé do site oficial ou em qualquer edital.
 4. Confira os limites legais do ano em `limites:`. Os valores de dispensa mudam todo ano por decreto federal.
+   Troque também a lista de vizinhos em `precos.vizinhos` (nome e código IBGE). A coleta avisa se um código não corresponder ao nome.
 5. Rode os três comandos acima e leia o relatório com calma.
 6. Acrescente sua cidade na `matrix` do workflow semanal.
 
