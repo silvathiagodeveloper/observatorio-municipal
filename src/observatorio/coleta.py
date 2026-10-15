@@ -142,18 +142,33 @@ def coletar(cfg_path: str, etapas=ETAPAS):
     minimo = cp.get("item_valor_minimo", 20000)
 
     if "itens" in etapas:
-        # Itens das compras do próprio município, com o preço homologado dos
-        # itens relevantes. Reverifica compras atualizadas no PNCP.
+        # Itens das compras do município e das compras de outros órgãos que
+        # geraram contratos dele (consórcio). Nas próprias, já baixa o preço
+        # homologado dos itens relevantes; nas externas, os resultados são
+        # escolhidos depois, pelos fornecedores contratados.
         pend = con.execute("""
-          SELECT p.id FROM contratacoes p LEFT JOIN itens_verificados v ON v.compra_id = p.id
-          WHERE p.externa = 0 AND (v.compra_id IS NULL
-             OR json_extract(p.bruto, '$.dataAtualizacaoGlobal') > v.verificado_em)""").fetchall()
-        for i, (cid,) in enumerate(pend, 1):
-            _coletar_itens(con, api, cid, minimo)
+          SELECT p.id, p.externa FROM contratacoes p LEFT JOIN itens_verificados v ON v.compra_id = p.id
+          WHERE v.compra_id IS NULL
+             OR json_extract(p.bruto, '$.dataAtualizacaoGlobal') > v.verificado_em""").fetchall()
+        for i, (cid, externa) in enumerate(pend, 1):
+            _coletar_itens(con, api, cid, None if externa else minimo)
             if i % 50 == 0:
                 con.commit(); print(f"  itens: {i}/{len(pend)} compras", flush=True)
         con.commit()
         print(f"itens: {len(pend)} compras verificadas", flush=True)
+
+        # Compras externas (consórcio): o resultado de cada item diz quem venceu,
+        # e só interessam os itens vencidos por fornecedores contratados pelo município.
+        pend = con.execute("""
+          SELECT i.compra_id, i.numero FROM itens i JOIN contratacoes p ON p.id = i.compra_id
+          LEFT JOIN resultados_verificados v ON v.compra_id = i.compra_id AND v.numero_item = i.numero
+          WHERE p.externa = 1 AND i.tem_resultado = 1 AND v.compra_id IS NULL""").fetchall()
+        for i, (cid, n) in enumerate(pend, 1):
+            _coletar_resultados(con, api, cid, n)
+            if i % 100 == 0:
+                con.commit(); print(f"  resultados de compras externas: {i}/{len(pend)}", flush=True)
+        con.commit()
+        print(f"resultados de compras externas: {len(pend)}", flush=True)
 
     if "referencias" in etapas:
         _referencias(con, api, cfg, cp, minimo)

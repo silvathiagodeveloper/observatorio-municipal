@@ -13,7 +13,7 @@ Observatório social municipal semiautônomo. Primeira instância: Tijucas/SC (C
 
 ## Estado atual (out/2026)
 - Coleta PNCP desde 2025-01-01: 471 contratações próprias, 78 compras de outros órgãos, 861 contratos e 78 aditivos.
-- 84% dos contratos vêm de compras do consórcio **CINCATARINA** (CNPJ 12.075.748/0001-32). A etapa `compras_externas` busca essas compras.
+- 84% dos contratos **em número** (712 de 861), mas só cerca de 13% **em valor** (R$ 13,7 mi de R$ 108 mi), vêm de compras do consórcio **CINCATARINA** (CNPJ 12.075.748/0001-32). A etapa `compras_externas` busca essas compras.
 - 9 regras em `src/observatorio/regras.py`, incluindo `preco_acima_da_referencia` (vizinhos em `precos.vizinhos` e certame de origem das adesões). A revisão manual fica em `dados/revisao.json`.
 
 ## Caso em aberto
@@ -29,15 +29,14 @@ Inconclusivos:
 - jaquetas escolares (adesão à ata de Governador Celso Ramos, R$ 80 por unidade).
 
 ## Próximos passos técnicos
-1. Estender a comparação de preços às compras do consórcio CINCATARINA (hoje só entram as compras próprias).
-2. Agente revisor via API (`agentes/revisor.md`) para gerar `dados/revisao.json`.
-3. Importador de planilhas exportadas do portal Atende.net.
-4. Pedido via LAI à prefeitura pela base de empenhos e pagamentos em formato aberto.
+1. Agente revisor via API (`agentes/revisor.md`) para gerar `dados/revisao.json`.
+2. Importador de planilhas exportadas do portal Atende.net.
+3. Pedido via LAI à prefeitura pela base de empenhos e pagamentos em formato aberto.
 
 ## Comandos
 ```bash
 pip install -e .
-python -m observatorio.coleta config/tijucas.yaml [contratacoes|contratos|compras_externas|termos]
+python -m observatorio.coleta config/tijucas.yaml [contratacoes|contratos|compras_externas|termos|itens|referencias]
 python -m observatorio.regras config/tijucas.yaml
 python -m observatorio.relatorio config/tijucas.yaml
 ```

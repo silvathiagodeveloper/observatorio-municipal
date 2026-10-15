@@ -106,8 +106,16 @@ class PNCP:
     def termos(self, cnpj: str, ano: int, seq: int) -> list[dict]:
         return self._get(f"{PNCP_API}/orgaos/{cnpj}/contratos/{ano}/{seq}/termos") or []
 
-    def itens(self, cnpj: str, ano: int, seq: int) -> list[dict]:
-        return self._get(f"{PNCP_API}/orgaos/{cnpj}/compras/{ano}/{seq}/itens") or []
+    def itens(self, cnpj: str, ano: int, seq: int, tamanho: int = 500) -> list[dict]:
+        # Paginado: sem os parâmetros, a API devolve só os 10 primeiros itens.
+        out, pagina = [], 1
+        while True:
+            d = self._get(f"{PNCP_API}/orgaos/{cnpj}/compras/{ano}/{seq}/itens",
+                          {"pagina": pagina, "tamanhoPagina": tamanho}) or []
+            out += d
+            if len(d) < tamanho:
+                return out
+            pagina += 1
 
     def resultados(self, cnpj: str, ano: int, seq: int, item: int) -> list[dict]:
         return self._get(f"{PNCP_API}/orgaos/{cnpj}/compras/{ano}/{seq}/itens/{item}/resultados") or []

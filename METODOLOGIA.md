@@ -26,6 +26,8 @@ Limitações conhecidas:
 - O PNCP depende do que a prefeitura cadastra. Erros de cadastro geram falsos positivos, e omissões geram falsos negativos.
 - Reajustes e prorrogações às vezes aparecem como aditivo de valor.
 - Na comparação de preços, a equivalência entre itens é estimada pela descrição: as mesmas palavras, as mesmas medidas e a mesma unidade. Itens parecidos podem ter especificações diferentes, e referências de anos anteriores não são corrigidas pela inflação. Só entram itens com valor total a partir de R$ 20 mil.
+- Em compras de consórcio (ex.: CINCATARINA), entram os itens vencidos por fornecedores que o município contratou naquela compra. O PNCP não informa quais itens nem quanto o município contratou de cada um: se o fornecedor venceu vários itens, todos entram na comparação, e o alerta não estima a diferença em reais. Confira no contrato quais itens foram de fato contratados.
+- Diferenças acima de 5x a referência são ignoradas: quase sempre são de unidade ou embalagem (pacote com 100 contra unidade avulsa). Um sobrepreço real dessa ordem passa sem alerta.
 - O certame de origem de uma adesão é localizado pelo texto do objeto ("Município de X ... Pregão nº N/AAAA"). Atas de consórcios e de órgãos federais, ou objetos sem essas informações, precisam ser informados à mão em `precos.origem_adesoes`.
 
 Regras planejadas:

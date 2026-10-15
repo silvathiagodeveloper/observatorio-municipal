@@ -52,6 +52,7 @@ precos:
   referencias_minimas: 3             # compras parecidas exigidas para usar a mediana
   fator_mediana: 1.5                 # alerta acima de 1,5x a mediana dos vizinhos
   fator_mesmo_certame: 1.2           # adesão: alerta acima de 1,2x o menor preço do certame de origem
+  fator_maximo: 5                    # acima disso, provável diferença de unidade ou embalagem: não alerta
   # Certame de origem de uma adesão, quando o objeto não permite achar sozinho:
   # origem_adesoes:
   #   "243/2025": "82892274000105-1-000016/2024"

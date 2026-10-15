@@ -295,6 +295,8 @@ def r_precos(con, cfg):
     sim_min = cp.get("similaridade_minima", 0.7)
     n_min = cp.get("referencias_minimas", 3)
     f_med, f_cert = cp.get("fator_mediana", 1.5), cp.get("fator_mesmo_certame", 1.2)
+    # Acima disso, a diferença costuma ser de unidade ou embalagem (pacote x unidade, litro x galão).
+    f_max = cp.get("fator_maximo", 5)
     refs = [r for r in precos.itens_de_referencia(con) if r["preco"] > 0]
     if not refs:
         return []
@@ -309,6 +311,8 @@ def r_precos(con, cfg):
             continue
         melhor = {}  # um item por compra de referência: o mais parecido
         for r, s in indice.similares(it["tokens"], it["unidade_norm"], sim_min):
+            if r["orgao_cnpj"] == it["orgao_cnpj"]:
+                continue  # a compra não serve de referência para si mesma
             if r["compra_id"] not in melhor or s > melhor[r["compra_id"]][1]:
                 melhor[r["compra_id"]] = (r, s)
         similares = [r for r, _ in melhor.values()]
@@ -317,13 +321,13 @@ def r_precos(con, cfg):
         achado = None
         if do_certame:
             ref = min(do_certame, key=lambda r: r["preco"])
-            if it["preco"] > f_cert * ref["preco"]:
+            if f_cert * ref["preco"] < it["preco"] <= f_max * ref["preco"]:
                 achado = (ref["preco"], f"no certame de origem ({ref['modalidade']} {ref['numero_compra']}, "
                           f"{ref['orgao_nome']}), {ref['fornecedor'] or 'o registro'} ficou com {brl(ref['preco'])} "
                           f"({ref['preco_tipo']})", [ref])
         if not achado and len(mercado) >= n_min:
             med = median(r["preco"] for r in mercado)
-            if it["preco"] > f_med * med:
+            if f_med * med < it["preco"] <= f_max * med:
                 munis = sorted({r["municipio"] or r["orgao_nome"] for r in mercado})
                 achado = (med, f"mediana de {brl(med)} em {len(mercado)} compra(s) de {', '.join(munis[:6])}", mercado)
         if achado:
@@ -332,7 +336,9 @@ def r_precos(con, cfg):
     out = []
     for cid, achados in por_compra.items():
         it0 = achados[0][0]
-        excesso = sum((it["preco"] - ref) * (it["quantidade"] or 0) for it, ref, _, _ in achados)
+        externa = bool(it0["externa"])
+        # Em compra de consórcio, a quantidade do item é a de todos os consorciados.
+        excesso = 0 if externa else sum((it["preco"] - ref) * (it["quantidade"] or 0) for it, ref, _, _ in achados)
         maior = max(it["preco"] / ref for it, ref, _, _ in achados)
         linhas = [f"Item {it['numero']} ({_resumo(it['descricao'])}): {brl(it['preco'])} ({it['preco_tipo']}), "
                   f"{it['preco'] / ref - 1:+.0%} — {texto}." for it, ref, texto, _ in achados]
@@ -340,9 +346,12 @@ def r_precos(con, cfg):
         adesao = (it0["objeto_compra"] or "").lower().startswith("ades")
         out.append(alerta(
             "preco_acima_da_referencia", "alta" if maior >= 2 else "media",
-            f"Preços acima da referência — processo {it0['processo']}",
-            f"{len(achados)} item(ns) com preço unitário acima da referência. Diferença potencial de {brl(excesso)} "
-            f"nas quantidades da compra. " + " ".join(linhas) + f" Objeto: {(it0['objeto_compra'] or '')[:200]}",
+            f"Preços acima da referência — processo {it0['processo']}" + (f" ({it0['orgao_nome']})" if externa else ""),
+            f"{len(achados)} item(ns) com preço unitário acima da referência. "
+            + (f"Compra feita por {it0['orgao_nome']}, da qual {cfg['municipio']} contratou fornecedores; "
+               "a quantidade contratada pelo município não está no PNCP. " if externa
+               else f"Diferença potencial de {brl(excesso)} nas quantidades da compra. ")
+            + " ".join(linhas) + f" Objeto: {(it0['objeto_compra'] or '')[:200]}",
             evid,
             ["Itens só parecidos na descrição, com especificação diferente (material, medidas, instalação incluída ou não).",
              "Diferença de data: referências de anos anteriores, sem reajuste, ou variação de mercado.",
