@@ -50,16 +50,45 @@ def alerta(regra, gravidade, titulo, descricao, evidencias, legitimo, verificar,
 def r_aditivos(con, cfg):
     lim, lim_ref = cfg["limites"]["aditivo_percentual"], cfg["limites"]["aditivo_percentual_reforma"]
     out = []
+    # Conta só termos aditivos marcados como acréscimo/supressão e que NÃO são
+    # reajuste (apostilamentos e reajustes ficam fora do limite do art. 125).
+    # Termos que também prorrogam a vigência são contados à parte, porque o
+    # valor pode ser do novo período e não acréscimo de objeto.
     rows = con.execute("""
-      SELECT c.*, COALESCE(SUM(t.valor_acrescido),0) AS acrescido, COUNT(t.sequencial) AS n_termos
+      SELECT c.*,
+        COALESCE(SUM(CASE WHEN t.tipo = 'Termo Aditivo'
+               AND json_extract(t.bruto,'$.qualificacaoAcrescimoSupressao') = 1
+               AND json_extract(t.bruto,'$.qualificacaoReajuste') = 0
+               AND json_extract(t.bruto,'$.qualificacaoVigencia') = 0
+               THEN t.valor_acrescido END), 0) AS acrescido,
+        COALESCE(SUM(CASE WHEN t.tipo = 'Termo Aditivo'
+               AND json_extract(t.bruto,'$.qualificacaoAcrescimoSupressao') = 1
+               AND json_extract(t.bruto,'$.qualificacaoReajuste') = 0
+               AND json_extract(t.bruto,'$.qualificacaoVigencia') = 1
+               THEN t.valor_acrescido END), 0) AS acrescido_com_prorrogacao,
+        COUNT(t.sequencial) AS n_termos
       FROM contratos c LEFT JOIN termos t ON t.contrato_id = c.id
       GROUP BY c.id""").fetchall()
     for c in rows:
         base = c["valor_inicial"] or 0
         if base <= 0:
             continue
-        acrescido = max(c["acrescido"] or 0, (c["valor_global"] or 0) - base)
+        acrescido = c["acrescido"] or 0
+        ambiguo = c["acrescido_com_prorrogacao"] or 0
         pct = acrescido / base
+        teto_c = lim_ref if re.search(r"reforma", c["objeto"] or "", re.I) else lim
+        if pct <= teto_c and ambiguo / base > teto_c:
+            # Só passa do limite somando termos que também prorrogaram a vigência: indício fraco.
+            out.append(alerta(
+                "aditivo_com_prorrogacao", "baixa",
+                f"Aditivos com prorrogação somam {ambiguo/base:.0%} do valor inicial — {c['fornecedor_nome']}",
+                f"Contrato {c['numero']} (processo {c['processo']}), valor inicial {brl(base)}. Os termos combinam acréscimo "
+                f"e prorrogação ({brl(ambiguo)}); pode ser só o valor do novo período. Objeto: {(c['objeto'] or '')[:200]}",
+                [link_contrato(c["id"])],
+                ["Prorrogação de serviço contínuo: o valor acrescido corresponde ao novo período, o que é legal."],
+                ["Ler os termos: o valor acrescido é proporcional ao prazo prorrogado? Se for maior, há acréscimo de objeto embutido."],
+                "Monitoramento; vira caso só se o acréscimo de quantidade ficar claro.", valor=ambiguo))
+            continue
         reforma = bool(re.search(r"reforma", c["objeto"] or "", re.I))
         teto = lim_ref if reforma else lim
         if pct > teto:
@@ -93,7 +122,8 @@ def _dispensas(con):
 def r_dispensa_acima_limite(con, cfg):
     out = []
     for p in con.execute("""SELECT * FROM contratacoes WHERE modalidade_id = 8
-                             AND (amparo_legal LIKE '%75, I' OR amparo_legal LIKE '%75, II')""").fetchall():
+                             AND (amparo_legal LIKE '%75, I' OR amparo_legal LIKE '%75, II')
+                             AND objeto NOT LIKE 'Ades%'""").fetchall():
         chave = "dispensa_obras_eng" if p["amparo_legal"].endswith("75, I") else "dispensa_outros"
         lim = _limite(cfg, chave, p["ano"])
         v = p["valor_homologado"] or p["valor_estimado"] or 0
@@ -193,7 +223,66 @@ def r_concentracao(con, cfg):
     return out
 
 
-REGRAS = [r_dispensa_acima_limite, r_aditivos, r_fracionamento, r_recorrencia, r_concentracao]
+def r_adesao(con, cfg):
+    """Adesão ('carona') a ata de registro de preços de outro ente. É legal
+    (art. 86, §2º), mas exige justificativa de vantagem e preços de mercado."""
+    out = []
+    lim = _limite(cfg, "dispensa_outros", 2026)
+    for p in con.execute("""SELECT * FROM contratacoes WHERE objeto LIKE 'Ades%' AND externa = 0
+                            ORDER BY COALESCE(valor_homologado, valor_estimado) DESC""").fetchall():
+        v = p["valor_homologado"] or p["valor_estimado"] or 0
+        if v < lim:
+            continue
+        cadastro = (f" Atenção: está cadastrada no PNCP como {p['modalidade']} com amparo em {p['amparo_legal']}, "
+                    "o que não corresponde a uma adesão (erro de cadastro a ser corrigido).") if p["modalidade_id"] == 8 else ""
+        out.append(alerta(
+            "adesao_a_ata_de_outro_ente", "media" if v > 5 * lim else "baixa",
+            f"Adesão a ata de outro ente — {brl(v)} (processo {p['processo']})",
+            f"{(p['objeto'] or '')[:260]}.{cadastro}",
+            [link_compra(p["id"])],
+            ["Adesão é permitida pelo art. 86, §2º da Lei 14.133 quando há vantagem comprovada.",
+             "Pode ter sido mais rápida e barata que licitar do zero."],
+            ["Pedir o estudo que justificou a adesão: comparação de preços com o mercado e com atas de outros entes.",
+             "Conferir se a quantidade aderida respeita o limite de 50% dos quantitativos da ata (art. 86, §4º).",
+             "Verificar se o órgão gerenciador e o fornecedor autorizaram a adesão (documentos no processo)."],
+            "Se faltar justificativa de vantagem: ofício à Secretaria pedindo o processo; depois Controle Interno. "
+            "Se o cadastro no PNCP estiver errado, pedir a correção (transparência).",
+            valor=v))
+    return out
+
+
+def r_adesoes_repetidas(con, cfg):
+    """Várias adesões do município à MESMA ata. O art. 86, §4º limita cada órgão
+    aderente a 50% dos quantitativos da ata; adesões fatiadas podem somar mais."""
+    out, grupos = [], defaultdict(list)
+    for p in con.execute("SELECT * FROM contratacoes WHERE objeto LIKE 'Ades%' AND externa = 0").fetchall():
+        o = p["objeto"] or ""
+        ata = re.search(r"Ata de Registro de Pre[çc]os n[ºo°.]*\s*([\d./-]+)", o, re.I)
+        ente = re.search(r"(Munic[íi]pio de [^,.;/]+|FNDE|Fundo Nacional[^,.;]+|Cons[óo]rcio[^,.;]+)", o, re.I)
+        if ata:
+            grupos[(ata.group(1).strip(" ./-"), (ente.group(1).strip() if ente else "?").lower())].append(p)
+    for (ata, ente), ps in grupos.items():
+        if len(ps) < 2:
+            continue
+        soma = sum(x["valor_homologado"] or x["valor_estimado"] or 0 for x in ps)
+        out.append(alerta(
+            "adesoes_repetidas_mesma_ata", "media",
+            f"{len(ps)} adesões à mesma ata ({ata}, {ente.title()}) somam {brl(soma)}",
+            "Processos: " + "; ".join(f"{x['processo']} ({brl(x['valor_homologado'] or x['valor_estimado'])}, publicado {x['data_publicacao'][:10]})" for x in ps)
+            + ". Objeto: " + (ps[0]["objeto"] or "")[:220],
+            [link_compra(x["id"]) for x in ps],
+            ["A ata pode ter quantitativos grandes o bastante para as duas adesões dentro do limite de 50%.",
+             "As adesões podem ser de itens diferentes da mesma ata."],
+            ["Obter a ata original no PNCP do órgão gerenciador e os quantitativos registrados por item.",
+             "Somar o que Tijucas aderiu, por item, nas duas adesões, e comparar com 50% do registrado (art. 86, §4º).",
+             "Ver se a ata ainda estava vigente na data da segunda adesão (validade máxima de 1 ano, prorrogável por mais 1)."],
+            "Se a soma passar de 50% de algum item ou a ata estiver vencida: ofício à Secretaria e ao Controle Interno; "
+            "sem correção, representação ao TCE-SC.",
+            valor=soma))
+    return out
+
+
+REGRAS = [r_dispensa_acima_limite, r_adesoes_repetidas, r_adesao, r_aditivos, r_fracionamento, r_recorrencia, r_concentracao]
 
 
 def rodar(cfg_path: str):

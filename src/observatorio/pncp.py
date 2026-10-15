@@ -13,7 +13,7 @@ from typing import Iterator
 import requests
 
 CONSULTA = "https://pncp.gov.br/api/consulta/v1"
-PNCP = "https://pncp.gov.br/api/pncp/v1"
+PNCP_API = "https://pncp.gov.br/api/pncp/v1"
 
 # Modalidades de contratação (tabela de domínio do PNCP)
 MODALIDADES = {
@@ -79,8 +79,12 @@ class PNCP:
                                       {"dataInicial": di, "dataFinal": df, "cnpj": cnpj,
                                        "codigoModalidadeContratacao": modalidade})
 
+    def compra(self, cnpj: str, ano: int, seq: int) -> dict | None:
+        """Uma contratação específica, de qualquer órgão (ex.: consórcio que licitou pelo município)."""
+        return self._get(f"{CONSULTA}/orgaos/{cnpj}/compras/{ano}/{seq}")
+
     def termos(self, cnpj: str, ano: int, seq: int) -> list[dict]:
-        return self._get(f"{PNCP}/orgaos/{cnpj}/contratos/{ano}/{seq}/termos") or []
+        return self._get(f"{PNCP_API}/orgaos/{cnpj}/contratos/{ano}/{seq}/termos") or []
 
     def itens(self, cnpj: str, ano: int, seq: int) -> list[dict]:
-        return self._get(f"{PNCP}/orgaos/{cnpj}/compras/{ano}/{seq}/itens") or []
+        return self._get(f"{PNCP_API}/orgaos/{cnpj}/compras/{ano}/{seq}/itens") or []

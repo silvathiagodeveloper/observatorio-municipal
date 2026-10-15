@@ -28,7 +28,9 @@ def gerar(cfg_path: str) -> Path:
     rev_path = base / "revisao.json"
     revisao = json.loads(rev_path.read_text(encoding="utf-8")) if rev_path.exists() else {}
 
-    n_compras, v_compras = con.execute("SELECT COUNT(*), SUM(COALESCE(valor_homologado, valor_estimado)) FROM contratacoes").fetchone()
+    n_compras, v_compras = con.execute("""SELECT COUNT(*), SUM(COALESCE(valor_homologado, valor_estimado))
+                                          FROM contratacoes WHERE externa = 0""").fetchone()
+    n_ext = con.execute("SELECT COUNT(*) FROM contratacoes WHERE externa = 1").fetchone()[0]
     n_contr, v_contr = con.execute("SELECT COUNT(*), SUM(COALESCE(valor_global, valor_inicial)) FROM contratos").fetchone()
     n_termos = con.execute("SELECT COUNT(*) FROM termos").fetchone()[0]
 
@@ -37,9 +39,28 @@ def gerar(cfg_path: str) -> Path:
          "> Este relatório lista **indícios** gerados por regras automáticas. Nenhum item é conclusão de irregularidade. "
          "Leia a seção *como verificar* de cada caso antes de qualquer encaminhamento.", "",
          "## Volume analisado", "",
-         f"- {n_compras} contratações publicadas ({brl(v_compras)})",
+         f"- {n_compras} contratações publicadas pelo município (valor estimado/homologado {brl(v_compras)})",
+         f"- {n_ext} compras de outros órgãos (consórcio CINCATARINA, atas de terceiros) que originaram contratos do município",
          f"- {n_contr} contratos ({brl(v_contr)})",
-         f"- {n_termos} termos aditivos", ""]
+         f"- {n_termos} termos aditivos", "",
+         "Limitações: o PNCP só tem o que a prefeitura cadastra. Atas de registro de preços, empenhos e pagamentos "
+         "ainda não estão cruzados (os pagamentos dependem do portal municipal ou de pedido via LAI). "
+         "A comparação de preços com outros municípios ainda está em desenvolvimento.", ""]
+
+    if revisao:
+        proc = [(t, r) for t, r in revisao.items() if r.get("classificacao", "").startswith("PROCEDENTE")]
+        inc = [(t, r) for t, r in revisao.items() if r.get("classificacao", "").startswith("INCONCLUSIVO")]
+        L += ["## Resumo da revisão", ""]
+        L += [f"- **Procedentes (indício a esclarecer):** {len(proc)}"] + [f"  - {t}" for t, _ in proc]
+        L += [f"- **Inconclusivos (faltam documentos):** {len(inc)}"] + [f"  - {t}" for t, _ in inc]
+        L += [f"- **Descartados ou só monitoramento:** {len(revisao) - len(proc) - len(inc)}", ""]
+        for t, r in proc + inc:
+            L += [f"### {t}", "", f"**{r['classificacao']}**", "", r["justificativa"], ""]
+            if r.get("proximo_passo"):
+                L += [f"**Próximo passo:** {r['proximo_passo']}", ""]
+            if r.get("documentos_faltantes"):
+                L += ["**Documentos a obter:**"] + [f"- {d}" for d in r["documentos_faltantes"]] + [""]
+        L += ["---", "", "# Todos os alertas gerados pelas regras", ""]
 
     for grav in ("alta", "media", "baixa"):
         itens = [a for a in alertas if a["gravidade"] == grav]
@@ -50,7 +71,7 @@ def gerar(cfg_path: str) -> Path:
             r = revisao.get(a["titulo"], {})
             L += [f"### {i}. {a['titulo']}", ""]
             if r:
-                L += [f"**Revisão:** {r.get('classificacao', '—')}. {r.get('justificativa', '')}", ""]
+                L += [f"**Revisão:** {r.get('classificacao', '—')}" + ("" if r.get("classificacao", "").startswith(("PROCEDENTE", "INCONCLUSIVO")) else f". {r.get('justificativa', '')}"), ""]
             L += [a["descricao"], "", "**Evidências:** " + ", ".join(f"[{j+1}]({u})" for j, u in enumerate(a["evidencias"][:8])), "",
                   "**Pode ter explicação legítima se:**"] + [f"- {x}" for x in a["explicacoes_legitimas"]] + [
                   "", "**Como verificar:**"] + [f"- {x}" for x in a["como_verificar"]] + [

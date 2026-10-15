@@ -14,6 +14,8 @@ CREATE TABLE IF NOT EXISTS contratacoes (
   modalidade_id INTEGER, modalidade TEXT, amparo_legal TEXT,
   objeto TEXT, valor_estimado REAL, valor_homologado REAL,
   data_publicacao TEXT, situacao TEXT, unidade TEXT, link TEXT,
+  externa INTEGER DEFAULT 0,        -- 1 = compra feita por outro órgão (consórcio, ata de terceiro)
+  orgao_cnpj TEXT, orgao_nome TEXT,
   bruto TEXT, coletado_em TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS contratos (
@@ -30,6 +32,9 @@ CREATE TABLE IF NOT EXISTS termos (
   valor_acrescido REAL, prazo_aditado_dias INTEGER, data_assinatura TEXT,
   bruto TEXT, PRIMARY KEY (contrato_id, sequencial)
 );
+CREATE TABLE IF NOT EXISTS termos_verificados (
+  contrato_id TEXT PRIMARY KEY, verificado_em TEXT
+);
 """
 
 
@@ -38,24 +43,35 @@ def conectar(caminho: str | Path) -> sqlite3.Connection:
     con = sqlite3.connect(caminho)
     con.row_factory = sqlite3.Row
     con.executescript(SCHEMA)
+    _migrar(con)
     return con
+
+
+def _migrar(con):
+    cols = {r[1] for r in con.execute("PRAGMA table_info(contratacoes)")}
+    for col, tipo in (("externa", "INTEGER DEFAULT 0"), ("orgao_cnpj", "TEXT"), ("orgao_nome", "TEXT")):
+        if col not in cols:
+            con.execute(f"ALTER TABLE contratacoes ADD COLUMN {col} {tipo}")
 
 
 def _j(x):
     return json.dumps(x, ensure_ascii=False)
 
 
-def salvar_contratacao(con, c: dict):
+def salvar_contratacao(con, c: dict, externa: bool = False):
     amparo = (c.get("amparoLegal") or {}).get("nome")
     con.execute("""INSERT OR REPLACE INTO contratacoes
       (id, ano, seq, processo, numero, modalidade_id, modalidade, amparo_legal, objeto,
-       valor_estimado, valor_homologado, data_publicacao, situacao, unidade, link, bruto)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (
+       valor_estimado, valor_homologado, data_publicacao, situacao, unidade, link,
+       externa, orgao_cnpj, orgao_nome, bruto)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (
         c["numeroControlePNCP"], c.get("anoCompra"), c.get("sequencialCompra"), c.get("processo"),
         c.get("numeroCompra"), c.get("modalidadeId"), c.get("modalidadeNome"), amparo,
         c.get("objetoCompra"), c.get("valorTotalEstimado"), c.get("valorTotalHomologado"),
         c.get("dataPublicacaoPncp"), c.get("situacaoCompraNome"),
-        (c.get("unidadeOrgao") or {}).get("nomeUnidade"), c.get("linkSistemaOrigem"), _j(c)))
+        (c.get("unidadeOrgao") or {}).get("nomeUnidade"), c.get("linkSistemaOrigem"),
+        int(externa), (c.get("orgaoEntidade") or {}).get("cnpj"),
+        (c.get("orgaoEntidade") or {}).get("razaoSocial"), _j(c)))
 
 
 def salvar_contrato(con, c: dict):

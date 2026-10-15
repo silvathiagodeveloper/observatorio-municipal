@@ -3,6 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 cfg="${1:-config/tijucas.yaml}"
+shift || true
 mkdir -p dados
-PYTHONPATH=src nohup python3 -u -m observatorio.coleta "$cfg" > dados/coleta.log 2>&1 &
+PYTHONPATH=src nohup python3 -u -m observatorio.coleta "$cfg" "$@" > dados/coleta.log 2>&1 &
 echo "coleta iniciada (pid $!) — acompanhe em dados/coleta.log"
