@@ -19,14 +19,16 @@ Inspirada na metodologia da rede **Observatório Social do Brasil (OSB)**: atua�
 | `possivel_fracionamento` | Mesmo fornecedor, várias dispensas por valor no ano, cada uma abaixo do teto e a soma acima | Lei 14.133, art. 75, §1º | média |
 | `fornecedor_recorrente_sem_licitacao` | Três ou mais dispensas ou inexigibilidades para o mesmo fornecedor no ano | Lei 14.133, arts. 72 a 75 | baixa ou média |
 | `concentracao_de_fornecedor` | Um fornecedor com mais de 10% do valor total contratado | — | baixa (monitoramento) |
+| `preco_acima_da_referencia` | Preço unitário acima de 1,2x o menor preço do certame de origem (adesões) ou de 1,5x a mediana de itens parecidos em municípios vizinhos (mínimo de 3 referências) | Lei 14.133, art. 23 (pesquisa de preços) e art. 86 (adesão com vantagem) | alta se passar do dobro; média nos demais casos |
 
 Limitações conhecidas:
 - O limite de dispensa vale **por ramo de atividade e por unidade gestora**, não por fornecedor. O fracionamento é aproximado pelo fornecedor e precisa de leitura humana dos objetos.
 - O PNCP depende do que a prefeitura cadastra. Erros de cadastro geram falsos positivos, e omissões geram falsos negativos.
 - Reajustes e prorrogações às vezes aparecem como aditivo de valor.
+- Na comparação de preços, a equivalência entre itens é estimada pela descrição: as mesmas palavras, as mesmas medidas e a mesma unidade. Itens parecidos podem ter especificações diferentes, e referências de anos anteriores não são corrigidas pela inflação. Só entram itens com valor total a partir de R$ 20 mil.
+- O certame de origem de uma adesão é localizado pelo texto do objeto ("Município de X ... Pregão nº N/AAAA"). Atas de consórcios e de órgãos federais, ou objetos sem essas informações, precisam ser informados à mão em `precos.origem_adesoes`.
 
 Regras planejadas:
-- **preço fora do mercado**: comparação do preço unitário com itens equivalentes de outros municípios no PNCP;
 - **empresa aberta pouco antes do contrato**;
 - **licitação com participante único**;
 - **cruzamento entre pagamentos e contratos** (depende dos dados do portal municipal).

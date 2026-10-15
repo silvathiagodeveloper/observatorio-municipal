@@ -8,15 +8,17 @@ Uso:  python -m observatorio.regras config/tijucas.yaml
 """
 from __future__ import annotations
 
+import html
 import json
 import re
 import sys
 from collections import defaultdict
 from pathlib import Path
+from statistics import median
 
 import yaml
 
-from . import db
+from . import db, precos
 
 
 def link_contrato(id_: str) -> str:
@@ -282,7 +284,85 @@ def r_adesoes_repetidas(con, cfg):
     return out
 
 
-REGRAS = [r_dispensa_acima_limite, r_adesoes_repetidas, r_adesao, r_aditivos, r_fracionamento, r_recorrencia, r_concentracao]
+def r_precos(con, cfg):
+    """Preço unitário acima da referência. Dois testes por item:
+    - mesmo certame: numa adesão, o preço comparado com os outros vencedores do
+      certame que gerou a ata (mesma especificação, mesma disputa);
+    - mercado: o preço comparado com a mediana de itens parecidos comprados por
+      municípios vizinhos.
+    A equivalência entre itens é aproximada pela descrição (veja precos.py)."""
+    cp = cfg.get("precos") or {}
+    sim_min = cp.get("similaridade_minima", 0.7)
+    n_min = cp.get("referencias_minimas", 3)
+    f_med, f_cert = cp.get("fator_mediana", 1.5), cp.get("fator_mesmo_certame", 1.2)
+    refs = [r for r in precos.itens_de_referencia(con) if r["preco"] > 0]
+    if not refs:
+        return []
+    indice = precos.Indice(refs)
+    origens = defaultdict(set)
+    for a, o in con.execute("SELECT adesao_id, origem_id FROM adesao_origem WHERE origem_id <> ''"):
+        origens[a].add(o)
+
+    por_compra = defaultdict(list)
+    for it in precos.itens_do_municipio(con, cp.get("item_valor_minimo", 20000)):
+        if it["preco"] <= 0:
+            continue
+        melhor = {}  # um item por compra de referência: o mais parecido
+        for r, s in indice.similares(it["tokens"], it["unidade_norm"], sim_min):
+            if r["compra_id"] not in melhor or s > melhor[r["compra_id"]][1]:
+                melhor[r["compra_id"]] = (r, s)
+        similares = [r for r, _ in melhor.values()]
+        do_certame = [r for r in similares if r["compra_id"] in origens.get(it["compra_id"], ())]
+        mercado = [r for r in similares if r["compra_id"] not in origens.get(it["compra_id"], ())]
+        achado = None
+        if do_certame:
+            ref = min(do_certame, key=lambda r: r["preco"])
+            if it["preco"] > f_cert * ref["preco"]:
+                achado = (ref["preco"], f"no certame de origem ({ref['modalidade']} {ref['numero_compra']}, "
+                          f"{ref['orgao_nome']}), {ref['fornecedor'] or 'o registro'} ficou com {brl(ref['preco'])} "
+                          f"({ref['preco_tipo']})", [ref])
+        if not achado and len(mercado) >= n_min:
+            med = median(r["preco"] for r in mercado)
+            if it["preco"] > f_med * med:
+                munis = sorted({r["municipio"] or r["orgao_nome"] for r in mercado})
+                achado = (med, f"mediana de {brl(med)} em {len(mercado)} compra(s) de {', '.join(munis[:6])}", mercado)
+        if achado:
+            por_compra[it["compra_id"]].append((it, *achado))
+
+    out = []
+    for cid, achados in por_compra.items():
+        it0 = achados[0][0]
+        excesso = sum((it["preco"] - ref) * (it["quantidade"] or 0) for it, ref, _, _ in achados)
+        maior = max(it["preco"] / ref for it, ref, _, _ in achados)
+        linhas = [f"Item {it['numero']} ({_resumo(it['descricao'])}): {brl(it['preco'])} ({it['preco_tipo']}), "
+                  f"{it['preco'] / ref - 1:+.0%} — {texto}." for it, ref, texto, _ in achados]
+        evid = [link_compra(cid)] + list(dict.fromkeys(link_compra(r["compra_id"]) for _, _, _, rs in achados for r in rs))
+        adesao = (it0["objeto_compra"] or "").lower().startswith("ades")
+        out.append(alerta(
+            "preco_acima_da_referencia", "alta" if maior >= 2 else "media",
+            f"Preços acima da referência — processo {it0['processo']}",
+            f"{len(achados)} item(ns) com preço unitário acima da referência. Diferença potencial de {brl(excesso)} "
+            f"nas quantidades da compra. " + " ".join(linhas) + f" Objeto: {(it0['objeto_compra'] or '')[:200]}",
+            evid,
+            ["Itens só parecidos na descrição, com especificação diferente (material, medidas, instalação incluída ou não).",
+             "Diferença de data: referências de anos anteriores, sem reajuste, ou variação de mercado.",
+             "Quantidade e logística: compras menores ou entrega em local distante costumam ter preço unitário maior."]
+            + (["Na adesão, o preço é o registrado na ata; a vantagem precisa estar demonstrada na pesquisa de preços."] if adesao else []),
+            ["Abrir os itens de referência no PNCP e comparar a especificação com a do item do município.",
+             "Pedir a pesquisa de preços do processo (art. 23 da Lei 14.133) e ver se ela considerou essas referências."]
+            + (["Conferir se o estudo de vantagem da adesão comparou o preço da ata com os outros resultados do mesmo certame."] if adesao else []),
+            "Se a especificação for equivalente e a pesquisa de preços não explicar a diferença: ofício à Secretaria "
+            "responsável e ao Controle Interno pedindo o processo e a pesquisa de preços; sem resposta, Câmara e TCE-SC.",
+            valor=excesso))
+    return out
+
+
+def _resumo(descricao: str | None) -> str:
+    primeira = html.unescape(descricao or "").strip().splitlines()[0] if descricao else ""
+    return primeira.strip(" ,.")[:90]
+
+
+REGRAS = [r_dispensa_acima_limite, r_adesoes_repetidas, r_adesao, r_precos, r_aditivos, r_fracionamento, r_recorrencia, r_concentracao]
 
 
 def rodar(cfg_path: str):

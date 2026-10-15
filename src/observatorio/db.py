@@ -35,6 +35,38 @@ CREATE TABLE IF NOT EXISTS termos (
 CREATE TABLE IF NOT EXISTS termos_verificados (
   contrato_id TEXT PRIMARY KEY, verificado_em TEXT
 );
+-- Compras de outros órgãos usadas só como referência de preço (municípios
+-- vizinhos, certame de origem de uma adesão). Ficam fora de contratacoes para
+-- não entrar nas outras regras nem no volume do relatório.
+CREATE TABLE IF NOT EXISTS compras_referencia (
+  id TEXT PRIMARY KEY,               -- numeroControlePNCP da compra
+  ano INTEGER, seq INTEGER, numero TEXT, modalidade TEXT, objeto TEXT, data_publicacao TEXT,
+  orgao_cnpj TEXT, orgao_nome TEXT, municipio TEXT, uf TEXT,
+  motivo TEXT,                       -- 'vizinho' ou 'origem_adesao'
+  bruto TEXT, coletado_em TEXT DEFAULT CURRENT_TIMESTAMP
+);
+-- Itens e resultados valem para as duas tabelas de compras (compra_id).
+CREATE TABLE IF NOT EXISTS itens (
+  compra_id TEXT, numero INTEGER, descricao TEXT, unidade TEXT, quantidade REAL,
+  valor_unitario_estimado REAL, valor_total REAL, tem_resultado INTEGER, situacao TEXT,
+  bruto TEXT, PRIMARY KEY (compra_id, numero)
+);
+CREATE TABLE IF NOT EXISTS resultados (
+  compra_id TEXT, numero_item INTEGER, sequencial INTEGER,
+  fornecedor_ni TEXT, fornecedor_nome TEXT, quantidade REAL, valor_unitario REAL, data_resultado TEXT,
+  bruto TEXT, PRIMARY KEY (compra_id, numero_item, sequencial)
+);
+CREATE TABLE IF NOT EXISTS itens_verificados (
+  compra_id TEXT PRIMARY KEY, verificado_em TEXT
+);
+CREATE TABLE IF NOT EXISTS resultados_verificados (
+  compra_id TEXT, numero_item INTEGER, verificado_em TEXT, PRIMARY KEY (compra_id, numero_item)
+);
+-- Certame de origem de cada adesão a ata de outro ente. origem_id vazio =
+-- procurado e não encontrado (informe à mão em precos.origem_adesoes).
+CREATE TABLE IF NOT EXISTS adesao_origem (
+  adesao_id TEXT, origem_id TEXT, verificado_em TEXT, PRIMARY KEY (adesao_id, origem_id)
+);
 """
 
 
@@ -87,6 +119,38 @@ def salvar_contrato(con, c: dict):
         c.get("valorInicial"), c.get("valorGlobal"), c.get("valorAcumulado"),
         c.get("dataAssinatura"), c.get("dataVigenciaInicio"), c.get("dataVigenciaFim"),
         (c.get("unidadeOrgao") or {}).get("nomeUnidade"), _j(c)))
+
+
+def salvar_referencia(con, c: dict, motivo: str):
+    u = c.get("unidadeOrgao") or {}
+    con.execute("""INSERT OR REPLACE INTO compras_referencia
+      (id, ano, seq, numero, modalidade, objeto, data_publicacao, orgao_cnpj, orgao_nome,
+       municipio, uf, motivo, bruto)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""", (
+        c["numeroControlePNCP"], c.get("anoCompra"), c.get("sequencialCompra"), c.get("numeroCompra"),
+        c.get("modalidadeNome"), c.get("objetoCompra"), c.get("dataPublicacaoPncp"),
+        (c.get("orgaoEntidade") or {}).get("cnpj"), (c.get("orgaoEntidade") or {}).get("razaoSocial"),
+        u.get("municipioNome"), u.get("ufSigla"), motivo, _j(c)))
+
+
+def salvar_item(con, compra_id: str, i: dict):
+    con.execute("""INSERT OR REPLACE INTO itens
+      (compra_id, numero, descricao, unidade, quantidade, valor_unitario_estimado, valor_total,
+       tem_resultado, situacao, bruto)
+      VALUES (?,?,?,?,?,?,?,?,?,?)""", (
+        compra_id, i.get("numeroItem"), i.get("descricao"), i.get("unidadeMedida"), i.get("quantidade"),
+        i.get("valorUnitarioEstimado"), i.get("valorTotal"), int(bool(i.get("temResultado"))),
+        i.get("situacaoCompraItemNome"), _j(i)))
+
+
+def salvar_resultado(con, compra_id: str, r: dict):
+    con.execute("""INSERT OR REPLACE INTO resultados
+      (compra_id, numero_item, sequencial, fornecedor_ni, fornecedor_nome, quantidade,
+       valor_unitario, data_resultado, bruto)
+      VALUES (?,?,?,?,?,?,?,?,?)""", (
+        compra_id, r.get("numeroItem"), r.get("sequencialResultado"), r.get("niFornecedor"),
+        r.get("nomeRazaoSocialFornecedor"), r.get("quantidadeHomologada"), r.get("valorUnitarioHomologado"),
+        r.get("dataResultado"), _j(r)))
 
 
 def salvar_termo(con, contrato_id: str, t: dict):

@@ -34,6 +34,28 @@ regras:
   concentracao_top_fornecedor: 0.10 # alerta se um fornecedor concentra >10% do valor contratado
   recorrencia_dispensa_min: 3       # alerta se um fornecedor recebe >=3 dispensas/inexigibilidades no ano
 
+# Comparação de preços (regra preco_acima_da_referencia)
+precos:
+  referencias_desde: 2024-01-01
+  modalidades_referencia: [4, 6, 7]  # concorrência e pregão: preços disputados
+  vizinhos:                          # nome: código IBGE. A coleta avisa se o nome não bater.
+    Porto Belo: 4213500
+    Itapema: 4208302
+    São João Batista: 4216305
+    Governador Celso Ramos: 4206009
+    Biguaçu: 4202305
+    São José: 4216602
+    Bombinhas: 4202453
+    Brusque: 4202909
+  item_valor_minimo: 20000           # só itens com valor total a partir disso
+  similaridade_minima: 0.7           # proporção de palavras e medidas em comum (0 a 1)
+  referencias_minimas: 3             # compras parecidas exigidas para usar a mediana
+  fator_mediana: 1.5                 # alerta acima de 1,5x a mediana dos vizinhos
+  fator_mesmo_certame: 1.2           # adesão: alerta acima de 1,2x o menor preço do certame de origem
+  # Certame de origem de uma adesão, quando o objeto não permite achar sozinho:
+  # origem_adesoes:
+  #   "243/2025": "82892274000105-1-000016/2024"
+
 # Fontes que não são coletadas automaticamente (exportação manual ou LAI)
 portais_manuais:
   transparencia: https://tijucas.atende.net/transparencia/
